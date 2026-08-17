@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import Papa from 'papaparse';
 import {
   FileSpreadsheet,
   FileText,
@@ -20,6 +21,20 @@ function App() {
   const [csvFile, setCsvFile] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [tasks, setTasks] = useState([]);
+
+  useEffect(() => {
+    if (csvFile) {
+      Papa.parse(csvFile, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => setTasks(results.data),
+        error: (err) => console.error('Error parsing CSV for preview:', err)
+      });
+    } else {
+      setTasks([]);
+    }
+  }, [csvFile]);
 
   const [config, setConfig] = useState({
     invoiceNumber: `INV-${Date.now().toString().slice(-6)}`,
@@ -76,6 +91,17 @@ function App() {
       // 5. Always stop the loading indicator, regardless of success or failure
       setIsLoading(false);
     }
+  };
+
+  const rate = parseFloat(config.hourlyRate) || 11.54;
+  const totalHours = tasks.reduce((sum, task) => sum + parseFloat(task['Time (decimal)'] || task.Hours || task['Time (h)'] || 0), 0);
+  const grandTotal = totalHours * rate;
+
+  const renderAddressLines = (address) => {
+    if (!address) return null;
+    return address.split('\n').map((line, idx) => (
+      <div key={idx}>{line}</div>
+    ));
   };
 
   return (
@@ -241,6 +267,99 @@ function App() {
             </div>
 
           </div>
+
+          {/* Invoice Preview */}
+          <div className="glass-panel mt-12 p-8 md:p-12 rounded-3xl bg-white shadow-2xl overflow-hidden mb-12">
+            <h2 className="text-2xl font-bold mb-8 text-center text-slate-700 flex items-center justify-center gap-2">
+              <Search className="w-6 h-6" /> Real-time Invoice Preview
+            </h2>
+            
+            <div className="max-w-4xl mx-auto bg-white border border-slate-200 rounded-sm shadow-md p-10 font-sans text-slate-800" style={{ fontFamily: "'Inter', sans-serif" }}>
+              
+              {/* Header */}
+              <div className="flex justify-between items-start mb-12">
+                <div>
+                  <h1 className="text-4xl font-extrabold text-slate-800 tracking-widest mb-4">INVOICE</h1>
+                  <div className="text-sm font-semibold">
+                    <span className="text-slate-500">Invoice Number: </span>{config.invoiceNumber || 'INV-XXX'}
+                  </div>
+                  <div className="text-sm font-semibold">
+                    <span className="text-slate-500">Date: </span>{config.invoiceDate}
+                  </div>
+                </div>
+              </div>
+
+              {/* Bill To */}
+              <div className="mb-12">
+                <h3 className="font-bold text-lg text-slate-800 mb-2">BILL TO:</h3>
+                <div className="font-bold text-lg">{config.clientCompany || config.clientName || 'Client Name'}</div>
+                {config.clientCompany && config.clientName && <div className="text-sm font-medium">{config.clientName}</div>}
+                {config.clientEmail && <div className="text-sm">{config.clientEmail}</div>}
+                <div className="text-sm mt-1">{renderAddressLines(config.clientAddress)}</div>
+              </div>
+
+              {/* Tasks Table */}
+              <div className="mb-12">
+                <table className="w-full text-left text-sm border-collapse">
+                  <thead>
+                    <tr className="border-b-2 border-slate-300 text-slate-800">
+                      <th className="py-3 font-bold">Task Description</th>
+                      <th className="py-3 font-bold text-right">Hours</th>
+                      <th className="py-3 font-bold text-right">Rate ($)</th>
+                      <th className="py-3 font-bold text-right">Total ($)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tasks.length > 0 ? (
+                      tasks.map((task, idx) => {
+                        const description = task.Description || task.Task || task.Name || '';
+                        const hours = parseFloat(task['Time (decimal)'] || task.Hours || task['Time (h)'] || 0);
+                        const total = hours * rate;
+                        return (
+                          <tr key={idx} className="border-b border-slate-100">
+                            <td className="py-3 text-slate-700">{description}</td>
+                            <td className="py-3 text-right text-slate-600">{hours.toFixed(2)}</td>
+                            <td className="py-3 text-right text-slate-600">{rate.toFixed(2)}</td>
+                            <td className="py-3 text-right text-slate-700 font-medium">{total.toFixed(2)}</td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan="4" className="py-8 text-center text-slate-400 italic border-b border-slate-100">No tasks found. Upload a CSV to preview entries.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                  <tfoot>
+                    <tr className="font-bold text-lg">
+                      <td className="py-4"></td>
+                      <td className="py-4 text-right border-t-2 border-slate-300">{totalHours.toFixed(2)}</td>
+                      <td className="py-4"></td>
+                      <td className="py-4 text-right border-t-2 border-slate-300 text-slate-900">{grandTotal.toFixed(2)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Account Details */}
+              <div className="mt-8 pt-8 border-t border-slate-200">
+                <h3 className="font-bold text-lg text-slate-800 mb-4">ACCOUNT DETAILS</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 text-sm">
+                  {config.bankName && <div><span className="font-bold text-slate-500">Bank Name: </span><span className="font-medium">{config.bankName}</span></div>}
+                  {config.accountName && <div><span className="font-bold text-slate-500">Account Name: </span><span className="font-medium">{config.accountName}</span></div>}
+                  {config.accountNumber && <div><span className="font-bold text-slate-500">Account Number: </span><span className="font-medium">{config.accountNumber}</span></div>}
+                  {config.bankAddress && <div><span className="font-bold text-slate-500">Bank Address: </span><span className="font-medium">{config.bankAddress}</span></div>}
+                  {config.accountType && <div><span className="font-bold text-slate-500">Account Type: </span><span className="font-medium">{config.accountType}</span></div>}
+                  {config.routingNumber && <div><span className="font-bold text-slate-500">Routing Number: </span><span className="font-medium">{config.routingNumber}</span></div>}
+                  {config.swiftCode && <div><span className="font-bold text-slate-500">SWIFT/BIC: </span><span className="font-medium">{config.swiftCode}</span></div>}
+                  {config.accountAddress1 && <div><span className="font-bold text-slate-500">Address 1: </span><span className="font-medium">{config.accountAddress1}</span></div>}
+                  {config.accountAddress2 && <div><span className="font-bold text-slate-500">Address 2: </span><span className="font-medium">{config.accountAddress2}</span></div>}
+                </div>
+              </div>
+
+            </div>
+          </div>
+
         </div>
       </main>
 
